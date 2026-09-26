@@ -54,7 +54,7 @@ class MainWindow(QWidget):
     def __init__(self, app):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setWindowTitle("검정구역 취켓팅 매크로")
+        self.setWindowTitle("검정치마 취켓팅 매크로")
         self.setFixedWidth(420)
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)  # 빈 곳을 누르면 입력칸 포커스가 빠지게
 
@@ -104,7 +104,7 @@ class MainWindow(QWidget):
         # 제목 줄
         self.theme_button = LinkButton("다크 모드", self.toggle_theme)
         header = QHBoxLayout()
-        header.addWidget(Title("검정구역 취켓팅 매크로"))
+        header.addWidget(Title("검정치마 취켓팅 매크로"))
         header.addStretch()
         header.addWidget(self.theme_button)
         header.addSpacing(12)

@@ -1,4 +1,4 @@
-"""검정구역 취켓팅 매크로. 실행: uv run main.py
+"""검정치마 취켓팅 매크로. 실행: uv run main.py
 
 코드는 cancel_catcher/, 문서는 docs/에 있다.
 """

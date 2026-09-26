@@ -99,7 +99,7 @@ def color_row(text):
 # (컴포넌트, [(상태, 코드, 만드는 함수, 너비)])
 GROUPS = [
     (Title, [
-        ("기본", 'Title("검정구역 취켓팅 매크로")', lambda: Title("검정구역 취켓팅 매크로"), None),
+        ("기본", 'Title("검정치마 취켓팅 매크로")', lambda: Title("검정치마 취켓팅 매크로"), None),
     ]),
     (Caption, [
         ("기본", 'Caption("이 창을 한 번 클릭해 두고 …")',
