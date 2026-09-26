@@ -1,10 +1,21 @@
-import tkinter as tk
-from tkinter import messagebox
-from pynput.mouse import Controller, Button
-from pynput.keyboard import Listener
-import pyautogui
+import sys
 import threading
 import time
+
+import pyautogui
+from pynput.keyboard import Listener
+from pynput.mouse import Button, Controller
+from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtWidgets import (
+    QApplication,
+    QGroupBox,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 # ============================================================
@@ -81,16 +92,30 @@ themes = {
 # 3. GUI 안전 업데이트
 # ============================================================
 
+# Qt 위젯은 GUI 스레드에서만 건드릴 수 있으므로
+# 매크로 / 키보드 스레드에서는 시그널로 GUI 스레드에 넘긴다.
+class GuiBridge(QObject):
+    call = Signal(object)
+
+    @Slot(object)
+    def run(self, fn):
+        fn()
+
+
+def run_on_gui(fn):
+    gui_bridge.call.emit(fn)
+
+
 def update_status(text, fg=None):
     def _update():
-        status_label.config(text=text)
+        status_label.setText(text)
         if fg:
-            status_label.config(fg=fg)
-    root.after(0, _update)
+            status_label.setStyleSheet(f"color: {fg};")
+    run_on_gui(_update)
 
 
 def set_label_text(label, text):
-    root.after(0, lambda: label.config(text=text))
+    run_on_gui(lambda: label.setText(text))
 
 
 # ============================================================
@@ -139,19 +164,16 @@ def save_rgb_value():
     rgb_value = screenshot.getpixel((x, y))
 
     def _update():
-        rgb_entry.config(state="normal")
-        rgb_entry.delete(0, tk.END)
-        rgb_entry.insert(0, str(rgb_value))
-        rgb_entry.config(state="disabled")
+        rgb_entry.setText(str(rgb_value))
         update_color_display()
 
-    root.after(0, _update)
+    run_on_gui(_update)
 
 
-def modify_rgb_value(event=None):
+def modify_rgb_value():
     global rgb_value
 
-    new_rgb = rgb_entry.get().strip()
+    new_rgb = rgb_entry.text().strip()
 
     try:
         new_rgb = new_rgb.strip("()")
@@ -162,41 +184,34 @@ def modify_rgb_value(event=None):
 
         rgb_value = (r, g, b)
         update_color_display()
-        rgb_entry.config(state="disabled")
 
     except ValueError:
-        messagebox.showerror(
+        QMessageBox.critical(
+            window,
             "RGB 오류",
             "RGB 형식이 올바르지 않습니다.\n\n예: (255, 0, 0)",
         )
-        rgb_entry.config(state="normal")
-        rgb_entry.delete(0, tk.END)
-        rgb_entry.insert(0, str(rgb_value))
-        rgb_entry.config(state="disabled")
 
-
-def enable_rgb_entry(event=None):
-    rgb_entry.config(state="normal")
-    rgb_entry.delete(0, tk.END)
-    rgb_entry.insert(0, str(rgb_value))
-    rgb_entry.focus_set()
+    rgb_entry.setText(str(rgb_value))
+    rgb_entry.clearFocus()
 
 
 def update_color_display():
     r, g, b = rgb_value
     color_hex = f"#{r:02x}{g:02x}{b:02x}"
-    color_display.config(bg=color_hex, text=f"RGB {rgb_value}")
+    color_display.setText(f"RGB {rgb_value}")
+    color_display.setStyleSheet(f"background: {color_hex};")
 
 
 # ============================================================
 # 6. 클릭 간격 함수
 # ============================================================
 
-def update_click_delay(event=None):
+def update_click_delay():
     global click_delay
 
     try:
-        new_delay = float(time_entry.get())
+        new_delay = float(time_entry.text())
 
         if new_delay <= 0:
             raise ValueError
@@ -208,24 +223,15 @@ def update_click_delay(event=None):
             current_theme()["status"],
         )
 
-        time_entry.config(state="disabled")
-
     except ValueError:
-        messagebox.showerror(
+        QMessageBox.critical(
+            window,
             "입력 오류",
             "0보다 큰 숫자를 입력하세요.\n\n예: 3 또는 1.5",
         )
-        time_entry.config(state="normal")
-        time_entry.delete(0, tk.END)
-        time_entry.insert(0, str(click_delay))
-        time_entry.config(state="disabled")
 
-
-def enable_time_entry(event=None):
-    time_entry.config(state="normal")
-    time_entry.delete(0, tk.END)
-    time_entry.insert(0, str(click_delay))
-    time_entry.focus_set()
+    time_entry.setText(str(click_delay))
+    time_entry.clearFocus()
 
 
 # ============================================================
@@ -247,8 +253,8 @@ def start_clicking():
 
     update_status("● 매크로 실행 중", "#2ecc71")
 
-    start_button.config(state="disabled")
-    stop_button.config(state="normal")
+    start_button.setEnabled(False)
+    stop_button.setEnabled(True)
 
     threading.Thread(
         target=alternate_clicks_and_detect,
@@ -273,8 +279,11 @@ def stop_clicking():
         current_theme()["status"],
     )
 
-    start_button.config(state="normal")
-    stop_button.config(state="disabled")
+    def _update():
+        start_button.setEnabled(True)
+        stop_button.setEnabled(False)
+
+    run_on_gui(_update)
 
 
 # ============================================================
@@ -499,78 +508,79 @@ def current_theme():
 def apply_theme():
     theme = current_theme()
 
-    root.config(bg=theme["bg"])
-
-    apply_widget_theme(root, theme)
-
-    title_label.config(
-        fg=theme["fg"],
-        bg=theme["bg"],
-    )
-
-    subtitle_label.config(
-        fg=theme["sub_fg"],
-        bg=theme["bg"],
-    )
-
-    status_label.config(bg=theme["surface"])
-
-    for entry in [rgb_entry, time_entry]:
-        entry.config(
-            bg=theme["entry_bg"],
-            fg=theme["entry_fg"],
-            insertbackground=theme["entry_fg"],
-        )
-
-
-def apply_widget_theme(widget, theme):
-
-    if isinstance(widget, tk.Label):
-        widget.config(
-            bg=theme["surface"],
-            fg=theme["fg"],
-        )
-
-    elif isinstance(widget, tk.LabelFrame):
-        widget.config(
-            bg=theme["surface"],
-            fg=theme["fg"],
-            highlightbackground=theme["border"],
-        )
-
-    elif isinstance(widget, tk.Frame):
-        widget.config(
-            bg=theme["surface"],
-        )
-
-    elif isinstance(widget, tk.Button):
-
-        if widget == start_button:
-            widget.config(
-                bg=theme["start"],
-                fg="white",
-                activebackground=theme["start"],
-                activeforeground="white",
-            )
-
-        elif widget == stop_button:
-            widget.config(
-                bg=theme["stop"],
-                fg="white",
-                activebackground=theme["stop"],
-                activeforeground="white",
-            )
-
-        else:
-            widget.config(
-                bg=theme["normal_button"],
-                fg=theme["normal_button_fg"],
-                activebackground=theme["normal_button"],
-                activeforeground=theme["normal_button_fg"],
-            )
-
-    for child in widget.winfo_children():
-        apply_widget_theme(child, theme)
+    app.setStyleSheet(f"""
+        QWidget {{
+            background: {theme["bg"]};
+            color: {theme["fg"]};
+            font-family: "Malgun Gothic";
+            font-size: 9pt;
+        }}
+        #title {{
+            font-size: 18pt;
+            font-weight: bold;
+        }}
+        #subtitle {{
+            color: {theme["sub_fg"]};
+        }}
+        QGroupBox {{
+            background: {theme["surface"]};
+            border: 1px solid {theme["border"]};
+            border-radius: 6px;
+            margin-top: 24px;
+            font-size: 10pt;
+            font-weight: bold;
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            left: 4px;
+        }}
+        QGroupBox QLabel {{
+            background: {theme["surface"]};
+            font-size: 9pt;
+            font-weight: normal;
+        }}
+        #color_display {{
+            border: 1px solid {theme["border"]};
+        }}
+        #status {{
+            padding: 8px;
+            font-size: 10pt;
+            font-weight: bold;
+        }}
+        QLineEdit {{
+            background: {theme["entry_bg"]};
+            color: {theme["entry_fg"]};
+            border: 1px solid {theme["border"]};
+            padding: 4px;
+            font-size: 9pt;
+            font-weight: normal;
+        }}
+        QPushButton {{
+            background: {theme["normal_button"]};
+            color: {theme["normal_button_fg"]};
+            border: none;
+            padding: 7px;
+            font-size: 9pt;
+            font-weight: normal;
+        }}
+        #start, #stop {{
+            color: white;
+            padding: 8px;
+            font-size: 10pt;
+            font-weight: bold;
+        }}
+        #start {{
+            background: {theme["start"]};
+        }}
+        #stop {{
+            background: {theme["stop"]};
+        }}
+        #start:disabled, #stop:disabled {{
+            background: {theme["border"]};
+            color: {theme["sub_fg"]};
+        }}
+    """)
 
 
 def toggle_theme():
@@ -578,10 +588,10 @@ def toggle_theme():
 
     if theme_mode == "light":
         theme_mode = "dark"
-        theme_button.config(text="☀  라이트 모드")
+        theme_button.setText("☀  라이트 모드")
     else:
         theme_mode = "light"
-        theme_button.config(text="🌙  다크 모드")
+        theme_button.setText("🌙  다크 모드")
 
     apply_theme()
 
@@ -595,155 +605,77 @@ def close_program():
 
     running = False
     stop_listener()
-    root.destroy()
 
 
 # ============================================================
 # 16. GUI 생성
 # ============================================================
 
-root = tk.Tk()
+app = QApplication(sys.argv)
 
-root.title("검정구역 취켓팅 매크로")
-root.geometry("460x760")
-root.minsize(460, 700)
-root.configure(bg=themes["light"]["bg"])
+gui_bridge = GuiBridge()
+gui_bridge.call.connect(gui_bridge.run)
+
+window = QWidget()
+window.setWindowTitle("검정구역 취켓팅 매크로")
+window.setMinimumWidth(460)
+
+main_layout = QVBoxLayout(window)
+main_layout.setContentsMargins(20, 20, 20, 20)
+main_layout.setSpacing(6)
+
+
+def add_group(title, widgets):
+    group = QGroupBox(title)
+    layout = QVBoxLayout(group)
+    layout.setContentsMargins(15, 10, 15, 10)
+
+    for widget in widgets:
+        layout.addWidget(widget)
+
+    main_layout.addWidget(group)
 
 
 # ============================================================
 # 17. 상단 헤더
 # ============================================================
 
-header = tk.Frame(
-    root,
-    bg=themes["light"]["bg"],
-)
+title_label = QLabel("검정구역 취켓팅 매크로")
+title_label.setObjectName("title")
 
-header.pack(
-    fill="x",
-    padx=20,
-    pady=(20, 10),
-)
+subtitle_label = QLabel("단축키를 이용하여 좌표와 탐색 영역을 설정하세요.")
+subtitle_label.setObjectName("subtitle")
 
-
-title_label = tk.Label(
-    header,
-    text="검정구역 취켓팅 매크로",
-    font=("맑은 고딕", 18, "bold"),
-    bg=themes["light"]["bg"],
-)
-
-title_label.pack(anchor="w")
-
-
-subtitle_label = tk.Label(
-    header,
-    text="단축키를 이용하여 좌표와 탐색 영역을 설정하세요.",
-    font=("맑은 고딕", 9),
-    bg=themes["light"]["bg"],
-)
-
-subtitle_label.pack(
-    anchor="w",
-    pady=(4, 0),
-)
+main_layout.addWidget(title_label)
+main_layout.addWidget(subtitle_label)
 
 
 # ============================================================
 # 18. 좌표 설정
 # ============================================================
 
-frame_positions = tk.LabelFrame(
-    root,
-    text="  📍 좌표 설정  ",
-    font=("맑은 고딕", 10, "bold"),
-    padx=15,
-    pady=10,
+label_a = QLabel("좌석영역 1 (A)   지정 안됨")
+label_b = QLabel("좌석영역 2 (B)   지정 안됨")
+label_f = QLabel("좌석지정 완료 (F)   지정 안됨")
+label_g = QLabel("새로고침 계속 (G)   지정 안됨")
+label_h = QLabel("지정석 펼치기 (H)   지정 안됨")
+
+add_group(
+    "📍 좌표 설정",
+    [label_a, label_b, label_f, label_g, label_h],
 )
-
-frame_positions.pack(
-    fill="x",
-    padx=20,
-    pady=6,
-)
-
-
-label_a = tk.Label(
-    frame_positions,
-    text="좌석영역 1 (A)   지정 안됨",
-    anchor="w",
-)
-
-label_b = tk.Label(
-    frame_positions,
-    text="좌석영역 2 (B)   지정 안됨",
-    anchor="w",
-)
-
-label_f = tk.Label(
-    frame_positions,
-    text="좌석지정 완료 (F)   지정 안됨",
-    anchor="w",
-)
-
-label_g = tk.Label(
-    frame_positions,
-    text="새로고침 계속 (G)   지정 안됨",
-    anchor="w",
-)
-
-label_h = tk.Label(
-    frame_positions,
-    text="지정석 펼치기 (H)   지정 안됨",
-    anchor="w",
-)
-
-for label in [label_a, label_b, label_f, label_g, label_h]:
-    label.pack(
-        fill="x",
-        pady=3,
-    )
 
 
 # ============================================================
 # 19. 색상 탐색 영역
 # ============================================================
 
-frame_area = tk.LabelFrame(
-    root,
-    text="  🔲 색 탐색 영역  ",
-    font=("맑은 고딕", 10, "bold"),
-    padx=15,
-    pady=10,
-)
+label_rectangle_start = QLabel("탐색 시작 (C)   지정 안됨")
+label_rectangle_end = QLabel("탐색 끝 (D)   지정 안됨")
 
-frame_area.pack(
-    fill="x",
-    padx=20,
-    pady=6,
-)
-
-
-label_rectangle_start = tk.Label(
-    frame_area,
-    text="탐색 시작 (C)   지정 안됨",
-    anchor="w",
-)
-
-label_rectangle_end = tk.Label(
-    frame_area,
-    text="탐색 끝 (D)   지정 안됨",
-    anchor="w",
-)
-
-label_rectangle_start.pack(
-    fill="x",
-    pady=3,
-)
-
-label_rectangle_end.pack(
-    fill="x",
-    pady=3,
+add_group(
+    "🔲 색 탐색 영역",
+    [label_rectangle_start, label_rectangle_end],
 )
 
 
@@ -751,112 +683,30 @@ label_rectangle_end.pack(
 # 20. 옵션 설정
 # ============================================================
 
-frame_options = tk.LabelFrame(
-    root,
-    text="  ⚙ 옵션 설정  ",
-    font=("맑은 고딕", 10, "bold"),
-    padx=15,
-    pady=12,
-)
+rgb_title = QLabel("🎨 탐색 색상")
 
-frame_options.pack(
-    fill="x",
-    padx=20,
-    pady=6,
-)
+# 입력칸은 클릭했을 때만 포커스를 받아서
+# 단축키(A ~ I)가 입력칸에 타이핑되지 않게 한다.
+rgb_entry = QLineEdit("(0, 0, 0)")
+rgb_entry.setAlignment(Qt.AlignmentFlag.AlignCenter)
+rgb_entry.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+rgb_entry.returnPressed.connect(modify_rgb_value)
 
+color_display = QLabel("E 키로 색상 지정")
+color_display.setObjectName("color_display")
+color_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
+color_display.setMinimumHeight(36)
 
-rgb_title = tk.Label(
-    frame_options,
-    text="🎨 탐색 색상",
-)
+time_title = QLabel("⏱ 클릭 간격")
 
-rgb_title.pack(anchor="w")
+time_entry = QLineEdit("3")
+time_entry.setAlignment(Qt.AlignmentFlag.AlignCenter)
+time_entry.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+time_entry.returnPressed.connect(update_click_delay)
 
-
-rgb_entry = tk.Entry(
-    frame_options,
-    width=20,
-    justify="center",
-)
-
-rgb_entry.insert(
-    0,
-    "(0, 0, 0)",
-)
-
-rgb_entry.pack(
-    pady=6,
-)
-
-rgb_entry.bind(
-    "<Return>",
-    modify_rgb_value,
-)
-
-rgb_entry.bind(
-    "<Button-1>",
-    enable_rgb_entry,
-)
-
-rgb_entry.config(
-    state="disabled",
-    disabledbackground="white",
-    disabledforeground="black",
-)
-
-
-color_display = tk.Label(
-    frame_options,
-    text="E 키로 색상 지정",
-    width=24,
-    height=2,
-    relief="solid",
-)
-
-color_display.pack(
-    fill="x",
-    pady=(2, 10),
-)
-
-
-time_title = tk.Label(
-    frame_options,
-    text="⏱ 클릭 간격",
-)
-
-time_title.pack(anchor="w")
-
-
-time_entry = tk.Entry(
-    frame_options,
-    width=20,
-    justify="center",
-)
-
-time_entry.insert(
-    0,
-    "3",
-)
-
-time_entry.pack(
-    pady=6,
-)
-
-time_entry.bind(
-    "<Return>",
-    update_click_delay,
-)
-
-time_entry.bind(
-    "<Button-1>",
-    enable_time_entry,
-)
-
-time_entry.config(
-    state="disabled",
-    disabledbackground="white",
-    disabledforeground="black",
+add_group(
+    "⚙ 옵션 설정",
+    [rgb_title, rgb_entry, color_display, time_title, time_entry],
 )
 
 
@@ -864,94 +714,31 @@ time_entry.config(
 # 21. 제어 영역
 # ============================================================
 
-frame_controls = tk.LabelFrame(
-    root,
-    text="  🕹 매크로 제어  ",
-    font=("맑은 고딕", 10, "bold"),
-    padx=15,
-    pady=12,
+start_button = QPushButton("▶  매크로 시작")
+start_button.setObjectName("start")
+start_button.clicked.connect(start_clicking)
+
+stop_button = QPushButton("■  매크로 정지")
+stop_button.setObjectName("stop")
+stop_button.setEnabled(False)
+stop_button.clicked.connect(stop_clicking)
+
+theme_button = QPushButton("🌙  다크 모드")
+theme_button.clicked.connect(toggle_theme)
+
+exit_button = QPushButton("✕  프로그램 종료 (I)")
+exit_button.clicked.connect(app.quit)
+
+status_label = QLabel("● 매크로 정지")
+status_label.setObjectName("status")
+status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+add_group(
+    "🕹 매크로 제어",
+    [start_button, stop_button, theme_button, exit_button, status_label],
 )
 
-frame_controls.pack(
-    fill="x",
-    padx=20,
-    pady=6,
-)
-
-
-start_button = tk.Button(
-    frame_controls,
-    text="▶  매크로 시작",
-    command=start_clicking,
-    font=("맑은 고딕", 10, "bold"),
-    relief="flat",
-    bd=0,
-    pady=8,
-)
-
-start_button.pack(
-    fill="x",
-    pady=4,
-)
-
-
-stop_button = tk.Button(
-    frame_controls,
-    text="■  매크로 정지",
-    command=stop_clicking,
-    state="disabled",
-    font=("맑은 고딕", 10, "bold"),
-    relief="flat",
-    bd=0,
-    pady=8,
-)
-
-stop_button.pack(
-    fill="x",
-    pady=4,
-)
-
-
-theme_button = tk.Button(
-    frame_controls,
-    text="🌙  다크 모드",
-    command=toggle_theme,
-    relief="flat",
-    bd=0,
-    pady=7,
-)
-
-theme_button.pack(
-    fill="x",
-    pady=4,
-)
-
-
-exit_button = tk.Button(
-    frame_controls,
-    text="✕  프로그램 종료 (I)",
-    command=close_program,
-    relief="flat",
-    bd=0,
-    pady=7,
-)
-
-exit_button.pack(
-    fill="x",
-    pady=4,
-)
-
-
-status_label = tk.Label(
-    frame_controls,
-    text="● 매크로 정지",
-    font=("맑은 고딕", 10, "bold"),
-    pady=8,
-)
-
-status_label.pack(
-    fill="x",
-)
+main_layout.addStretch()
 
 
 # ============================================================
@@ -959,17 +746,10 @@ status_label.pack(
 # ============================================================
 
 apply_theme()
+start_listener()
 
-listener_thread = threading.Thread(
-    target=start_listener,
-    daemon=True,
-)
+# 종료 버튼 / 창 닫기 모두 여기로 모인다.
+app.aboutToQuit.connect(close_program)
 
-listener_thread.start()
-
-root.protocol(
-    "WM_DELETE_WINDOW",
-    close_program,
-)
-
-root.mainloop()
+window.show()
+sys.exit(app.exec())

@@ -2,7 +2,7 @@
 ======================
 
 필요 패키지:
-    pip install pynput pyautogui
+    pip install pynput pyautogui PySide6-Essentials
 
 실행:
     python 검정구역_취켓팅_매크로.py
