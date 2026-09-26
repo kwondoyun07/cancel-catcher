@@ -1,11 +1,12 @@
 검정구역 취켓팅 매크로
 ======================
 
-필요 패키지:
-    pip install pynput pyautogui PySide6-Essentials
+필요 도구:
+    uv (https://docs.astral.sh/uv/)
 
 실행:
-    python 검정구역_취켓팅_매크로.py
+    uv run 검정구역_취켓팅_매크로.py
+    (처음 실행할 때 필요한 패키지가 자동으로 설치됩니다.)
 
 단축키:
     A: 좌석영역 1 저장
